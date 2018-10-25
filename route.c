@@ -47,13 +47,16 @@ int main(){
 	uint32_t dip; //Destination's IP address
   }__attribute__((packed));
 
-  /* Struct for ARP Header structs data, AKA arp payload */
-  /*struct arp_ipv4{
-	unsigned char smac[6]; //6 byte source MAK address
-	uint32_t sip; //Sender's IP address
-	unsigned char dmac[6]; //Destination MAK address
-	uint32_t dip; //Destination's IP address
-  }__attribute__((packed)); */
+  //File Desciptors for the different ports on the routers
+  int eth0_sock;
+  int eth1_sock;
+  int eth2_sock;
+  int eth3_sock;
+
+  //List of sockets 
+  fd_set socks;
+  FD_ZERO(&socks);
+
   
 
   int packet_socket;
@@ -87,8 +90,8 @@ int main(){
 	//could also use SOCK_DGRAM to cut off link layer header
 	//ETH_P_ALL indicates we want all (upper layer) protocols
 	//we could specify just a specific one
-	packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-	if(packet_socket<0){
+	eth1_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+	if(eth1_sock<0){
 	  perror("socket");
 	  return 2;
 	}
@@ -98,7 +101,40 @@ int main(){
 	//for "packet"), but of course bind takes a struct sockaddr.
 	//Here, we can use the sockaddr we got from getifaddrs (which
 	//we could convert to sockaddr_ll if we needed to)
-	if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1){
+	if(bind(eth1_sock,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1){
+	  perror("bind");
+	}
+      }
+	  if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)){
+	printf("Creating Socket on interface %s\n",tmp->ifa_name);
+	eth0_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+	if(eth0_sock<0){
+	  perror("socket");
+	  return 2;
+	}
+	if(bind(eth0_sock,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1){
+	  perror("bind");
+	}
+      }
+	  if(!strncmp(&(tmp->ifa_name[3]),"eth2",4)){
+	printf("Creating Socket on interface %s\n",tmp->ifa_name);
+	eth2_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+	if(eth2_sock<0){
+	  perror("socket");
+	  return 2;
+	}
+	if(bind(eth2_sock,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1){
+	  perror("bind");
+	}
+      }
+	  if(!strncmp(&(tmp->ifa_name[3]),"eth3",4)){
+	printf("Creating Socket on interface %s\n",tmp->ifa_name);
+	eth3_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+	if(eth3_sock<0){
+	  perror("socket");
+	  return 2;
+	}
+	if(bind(eth3_sock,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1){
 	  perror("bind");
 	}
       }
@@ -109,7 +145,11 @@ int main(){
   //a good way is to have one socket per interface and use select to
   //see which ones have data)
 
-
+ //Adding sockets to the list
+ FD_SET(eth0_sock, &socks);
+ FD_SET(eth1_sock, &socks);
+ FD_SET(eth2_sock, &socks);
+ FD_SET(eth3_sock, &socks);
 
   //Searching for MAK address
 		struct ifreq ifr;
@@ -155,6 +195,12 @@ int main(){
 
   printf("Ready to recieve now\n");
   while(1){
+	int i;
+	int length;
+	int sock;
+	fd_set tempset = socks;
+	select(FD_SETSIZE,&tempset,NULL,NULL,NULL);
+
     char buf[1500];
     struct sockaddr_ll recvaddr;
     int recvaddrlen=sizeof(struct sockaddr_ll);
@@ -163,7 +209,15 @@ int main(){
     //this packet is incoming or outgoing (when using ETH_P_ALL, we
     //see packets in both directions. Only outgoing can be seen when
     //using a packet socket with some specific protocol)
-    int n = recvfrom(packet_socket, buf, 1500,0,(struct sockaddr*)&recvaddr, &recvaddrlen);
+
+	int n;
+    //int n = recvfrom(eth1_sock, buf, 1500,0,(struct sockaddr*)&recvaddr, &recvaddrlen);
+
+	for(i = 0; i<FD_SETSIZE;i++){
+		if(FD_ISSET(i,&tempset)){
+			length = sizeof(tmp);
+			n = recvfrom(i, buf, 1500, 0, (struct sockaddr*)&recvaddr, &recvaddrlen);
+		
     //ignore outgoing packets (we can't disable some from being sent
     //by the OS automatically, for example ICMP port unreachable
     //messages, so we will just ignore them here)
@@ -316,7 +370,7 @@ int main(){
 		printf("Done 2\n");
 
 		printf("\nReturning ARP reply\n");
-		send(packet_socket, buf, 42,0);//Always 42 */
+		send(i, buf, 42,0);//Always 42 */
 		
 	}else{
 		printf("It is not an ARP request\n");
@@ -363,32 +417,18 @@ int main(){
 		hdr->smac[5] = mac_address[5];  
 
 
-			send(packet_socket, buf, 42,0);
+			send(i, buf, 42,0);
 		}
 	}
+   
 
 
    }
    else{
 	   printf("It is not an ARP Package\n");
    }
-   
-  /* printf("Checking to see if ICMP packet");
-   struct ip *ip = (struct ip *)buf;
-   if(ip->ip_proto == 1){
-	   printf("ICMP request received"\n);
-
-	   //Switching source and destination addrs
-	   uint32_t temp;
-	   temp = ip->ip_src;
-	   ip->ip_src = ip->ip_dst;
-	   ip->ip_dst = temp;
-
-	   //Proto type doesnt need to change? 
-	   //Both ICMP req and ICMP reply are 0?
-
-	   send(packet_socket, buf, strlen(buf) +1, 0);
-   } */
+		}
+	}
 
 
   }
